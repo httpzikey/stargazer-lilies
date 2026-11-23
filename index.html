@@ -1,0 +1,589 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stargazer Lilies</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+body {
+  color: #f8dce7;
+  font-family: Georgia, serif;
+}
+
+main {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background: #000;
+}
+
+#garden {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.message {
+  position: absolute;
+  bottom: 8%;
+  width: 100%;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 1.2s, transform 1.2s;
+  pointer-events: none;
+}
+
+.message.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.message h1 {
+  margin: 0;
+  font-size: clamp(22px, 4vw, 34px);
+  font-weight: normal;
+  letter-spacing: 2px;
+}
+
+.message p {
+  margin-top: 10px;
+  font: 11px monospace;
+  letter-spacing: 2px;
+  color: #bca1ae;
+}
+
+button {
+  position: absolute;
+  bottom: 2%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 20px;
+  background: #170b12;
+  border: 1px solid #89546d;
+  border-radius: 24px;
+  color: #f5cbdc;
+  font-family: monospace;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1s;
+}
+
+button.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+</style>
+</head>
+
+<body>
+
+<main>
+  <canvas id="garden"></canvas>
+
+  <div class="message" id="message">
+    <h1>to my dearest</h1>
+    <p>flowers, just for you.</p>
+  </div>
+
+  <button id="replay">bloom again ↻</button>
+</main>
+
+<script>
+const canvas = document.getElementById("garden");
+const ctx = canvas.getContext("2d");
+
+const message = document.getElementById("message");
+const replay = document.getElementById("replay");
+
+const W = 800;
+const H = 850;
+const TAU = Math.PI * 2;
+
+const clamp = (x, a = 0, b = 1) =>
+  Math.max(a, Math.min(b, x));
+
+function ease(t) {
+  t = clamp(t);
+  return t * t * (3 - 2 * t);
+}
+
+function hash(a, b, c = 0) {
+  const n = Math.sin(
+    a * 127.1 + b * 311.7 + c * 74.7
+  ) * 43758.5453;
+
+  return n - Math.floor(n);
+}
+
+// =====================================
+// SETTINGS
+// =====================================
+
+// Smaller = more detailed ASCII.
+// Larger = more visible individual characters.
+const ASCII_SIZE = 5.5;
+
+// Flower opening duration, in seconds.
+const BLOOM_DURATION = 3.2;
+
+// Overall movement intensity.
+const SWAY = 0.035;
+
+// =====================================
+// CANVAS
+// =====================================
+
+let viewScale = 1;
+let offsetX = 0;
+let offsetY = 0;
+
+function resize() {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+
+  canvas.width = Math.round(innerWidth * dpr);
+  canvas.height = Math.round(innerHeight * dpr);
+
+  viewScale = Math.min(
+    canvas.width / W,
+    canvas.height / H
+  );
+
+  offsetX = (canvas.width - W * viewScale) / 2;
+  offsetY = (canvas.height - H * viewScale) / 2;
+
+  ctx.setTransform(
+    viewScale, 0, 0, viewScale,
+    offsetX, offsetY
+  );
+}
+
+window.addEventListener("resize", resize);
+resize();
+
+// =====================================
+// FLOWER ARRANGEMENT
+// =====================================
+
+const flowers = [
+  {x:400,y:190,s:1.0,d:2.0,rot:0},
+  {x:270,y:275,s:.91,d:2.7,rot:-.28},
+  {x:530,y:270,s:.94,d:3.4,rot:.25},
+  {x:175,y:375,s:.85,d:4.1,rot:-.42},
+  {x:625,y:375,s:.86,d:4.8,rot:.42},
+  {x:350,y:370,s:.97,d:5.5,rot:-.14},
+  {x:460,y:380,s:.96,d:6.2,rot:.16},
+  {x:250,y:490,s:.86,d:6.9,rot:-.3},
+  {x:550,y:495,s:.86,d:7.6,rot:.3},
+  {x:395,y:510,s:1.02,d:8.3,rot:0}
+];
+
+// =====================================
+// ASCII PETAL TEXTURES
+// =====================================
+
+const symbols = ["@", "%", "#", "*", "+", ":"];
+
+function makePetal(seed) {
+  const c = document.createElement("canvas");
+  c.width = 100;
+  c.height = 170;
+
+  const g = c.getContext("2d");
+
+  g.font = `${ASCII_SIZE}px monospace`;
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+
+  // Each character is intentionally separated.
+  const spacingX = 4.5;
+  const spacingY = 5.5;
+
+  for (let y = 8; y < 164; y += spacingY) {
+    const t = y / 170;
+
+    // Long pointed lily petal
+    const halfWidth =
+      42 * Math.pow(Math.sin(Math.PI * t), .75);
+
+    if (halfWidth <= 0) continue;
+
+    for (
+      let x = 50 - halfWidth;
+      x <= 50 + halfWidth;
+      x += spacingX
+    ) {
+      const v = Math.abs(x - 50) / halfWidth;
+
+      const n = hash(
+        Math.floor(x / spacingX),
+        Math.floor(y / spacingY),
+        seed
+      );
+
+      let color;
+
+      if (v > .82) {
+        color = n > .5 ? "#fff7f1" : "#f9dce6";
+      }
+      else if (v > .62) {
+        color = n > .5 ? "#f7bed5" : "#f3a4c5";
+      }
+      else if (t < .7 && v < .55) {
+        color = n > .5 ? "#c92c79" : "#e14c91";
+      }
+      else {
+        color = n > .5 ? "#ed78aa" : "#f49dc1";
+      }
+
+      // Dark speckles
+      const spot = hash(
+        Math.floor(x / 9),
+        Math.floor(y / 9),
+        seed + 15
+      );
+
+      if (
+        t > .22 &&
+        t < .85 &&
+        v < .7 &&
+        spot > .88
+      ) {
+        color = "#792443";
+      }
+
+      // Preserve individual ASCII characters.
+      const char = symbols[
+        Math.floor(n * symbols.length)
+      ];
+
+      g.fillStyle = color;
+      g.fillText(char, x, y);
+    }
+  }
+
+  return c;
+}
+
+// Petals are generated only once.
+const petalTextures = [];
+
+for (let i = 0; i < 18; i++) {
+  petalTextures.push(makePetal(i));
+}
+
+// =====================================
+// ASCII STEM TEXTURE
+// =====================================
+
+function drawStem(f, time, index) {
+  const growth = ease((time - index * .12) / 2.3);
+
+  if (growth <= 0) return;
+
+  const baseX = 400;
+  const baseY = 755;
+
+  const movement =
+    Math.sin(time * .7 + index) * 5;
+
+  const endX = f.x + movement;
+  const endY = f.y + 15;
+
+  const controlX =
+    (baseX + endX) / 2 +
+    Math.sin(index * 2) * 20;
+
+  const controlY = 530;
+
+  const steps = 100;
+
+  ctx.save();
+  ctx.font = "7px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (let i = 0; i < steps * growth; i++) {
+    const t = i / steps;
+    const inv = 1 - t;
+
+    const x =
+      inv * inv * baseX +
+      2 * inv * t * controlX +
+      t * t * endX;
+
+    const y =
+      inv * inv * baseY +
+      2 * inv * t * controlY +
+      t * t * endY;
+
+    ctx.fillStyle =
+      i % 3 === 0 ? "#7eaf64" : "#467c42";
+
+    ctx.fillText(
+      i % 2 === 0 ? "/" : "|",
+      x, y
+    );
+  }
+
+  ctx.restore();
+}
+
+// =====================================
+// ASCII LEAVES
+// =====================================
+
+const leafTexture = (() => {
+  const c = document.createElement("canvas");
+  c.width = 100;
+  c.height = 45;
+
+  const g = c.getContext("2d");
+  g.font = "7px monospace";
+
+  for (let x = 0; x < 100; x += 5) {
+    const t = x / 100;
+    const half = 19 * Math.sin(Math.PI * t);
+
+    for (
+      let y = 22 - half;
+      y <= 22 + half;
+      y += 5
+    ) {
+      const n = hash(x, y);
+
+      g.fillStyle =
+        n > .6 ? "#9ac57b" :
+        n > .3 ? "#629b54" : "#386b39";
+
+      g.fillText(
+        n > .5 ? "#" : "+",
+        x, y
+      );
+    }
+  }
+
+  return c;
+})();
+
+function drawLeaves(f, time, index) {
+  const growth = ease((time - .7 - index * .1) / 2);
+
+  if (growth <= 0) return;
+
+  const bx = 400;
+  const by = 755;
+
+  for (let i = 0; i < 3; i++) {
+    const t = .3 + i * .18;
+
+    const x = bx + (f.x - bx) * t;
+    const y = by + (f.y - by) * t;
+
+    const direction = (i + index) % 2 ? 1 : -1;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(direction * -.55);
+    ctx.scale(direction * growth, growth);
+
+    ctx.drawImage(
+      leafTexture,
+      0, -22,
+      90, 40
+    );
+
+    ctx.restore();
+  }
+}
+
+// =====================================
+// BLOOMING FLOWERS
+// =====================================
+
+function drawFlower(f, time, index) {
+  const bloom = ease(
+    (time - f.d) / BLOOM_DURATION
+  );
+
+  if (bloom <= 0) return;
+
+  const sway =
+    Math.sin(time * .65 + index) * SWAY;
+
+  const x = f.x + Math.sin(time * .55 + index) * 4;
+  const y = f.y + Math.cos(time * .5 + index) * 2;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(f.rot + sway);
+  ctx.scale(f.s, f.s);
+
+  // Six lily petals.
+  // Each petal rotates outward as the flower opens.
+  for (let i = 0; i < 6; i++) {
+    const angle = i * TAU / 6;
+
+    // Closed bud starts narrow.
+    // Open petals spread radially.
+    const spread = .08 + bloom * .92;
+
+    const petalAngle = angle * spread;
+
+    ctx.save();
+    ctx.rotate(petalAngle);
+
+    // Petal grows and unfolds.
+    const length = .15 + bloom * .85;
+    const width = .22 + bloom * .78;
+
+    ctx.scale(width, length);
+
+    const texture =
+      petalTextures[(index * 6 + i) % petalTextures.length];
+
+    ctx.drawImage(
+      texture,
+      -50, -155,
+      100, 170
+    );
+
+    ctx.restore();
+  }
+
+  // Flower center
+  if (bloom > .5) {
+    const centerGrowth = ease((bloom - .5) * 2);
+
+    ctx.save();
+    ctx.scale(centerGrowth, centerGrowth);
+
+    ctx.font = "8px monospace";
+
+    for (let i = 0; i < 18; i++) {
+      const a = i * TAU / 18;
+      const r = 5 + hash(i, index) * 7;
+
+      ctx.fillStyle =
+        i % 2 ? "#f1d29c" : "#c57b4b";
+
+      ctx.fillText(
+        "*",
+        Math.cos(a) * r,
+        Math.sin(a) * r
+      );
+    }
+
+    // Stamens
+    for (let i = 0; i < 6; i++) {
+      const a = i * TAU / 6 + .3;
+
+      ctx.save();
+      ctx.rotate(a);
+
+      ctx.font = "8px monospace";
+
+      for (let j = 0; j < 9; j++) {
+        ctx.fillStyle = "#e8d2a4";
+        ctx.fillText("|", 0, -j * 5);
+      }
+
+      ctx.fillStyle = "#c7823e";
+      ctx.font = "12px monospace";
+      ctx.fillText("@", 0, -48);
+
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+// =====================================
+// BACKGROUND
+// =====================================
+
+function drawBackground(time) {
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.font = "6px monospace";
+
+  for (let i = 0; i < 45; i++) {
+    const x = hash(i, 2) * W;
+    const y = hash(i, 5) * H;
+
+    ctx.globalAlpha =
+      .07 + .08 * Math.abs(Math.sin(time * .5 + i));
+
+    ctx.fillStyle = "#bba6b0";
+    ctx.fillText(".", x, y);
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+// =====================================
+// ANIMATION
+// =====================================
+
+let startTime = performance.now();
+
+function animate(now) {
+  requestAnimationFrame(animate);
+
+  const time = (now - startTime) / 1000;
+
+  ctx.setTransform(
+    viewScale, 0, 0, viewScale,
+    offsetX, offsetY
+  );
+
+  drawBackground(time);
+
+  // Stems and leaves first.
+  flowers.forEach((f, i) => {
+    drawStem(f, time, i);
+    drawLeaves(f, time, i);
+  });
+
+  // Flowers bloom one by one.
+  flowers.forEach((f, i) => {
+    drawFlower(f, time, i);
+  });
+
+  if (time > 13) {
+    message.classList.add("show");
+    replay.classList.add("show");
+  }
+}
+
+replay.addEventListener("click", () => {
+  startTime = performance.now();
+
+  message.classList.remove("show");
+  replay.classList.remove("show");
+});
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
